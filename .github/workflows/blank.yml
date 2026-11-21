@@ -1,0 +1,75 @@
+name: Build Visual Launcher
+
+# Builds Windows / macOS / Linux installers.
+# Pushing a tag like "launcher-v1.0.0" also creates a GitHub Release with all installers attached.
+on:
+  push:
+    tags: ['launcher-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build installers
+        run: npm run dist -- ${{ matrix.target }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: visual-launcher-${{ matrix.os }}
+          path: |
+            launcher/dist/*.exe
+            launcher/dist/*.dmg
+            launcher/dist/*.AppImage
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/launcher-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Visual Launcher ${{ github.ref_name }}
+          files: artifacts/*
+          body: |
+            **Visual Launcher** – moderner Minecraft-Launcher mit Microsoft-Login, Modrinth- und CurseForge-Bibliothek und eingebautem Visual Client.
+
+            - Windows: `Visual Launcher Setup *.exe` (Installer) oder `Visual-Launcher-*-portable.exe`
+            - macOS: `.dmg` (nicht signiert: Rechtsklick → Öffnen)
+            - Linux: `.AppImage`
